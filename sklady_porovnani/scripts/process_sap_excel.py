@@ -4,6 +4,7 @@ from openpyxl.worksheet.table import Table, TableStyleInfo
 from openpyxl.utils import get_column_letter
 import os
 import argparse
+from pathlib import Path
 
 INPUT_DIR = "sklady_porovnani/input"
 OUTPUT_DIR = "sklady_porovnani/output"
