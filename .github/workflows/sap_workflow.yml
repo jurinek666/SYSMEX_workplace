@@ -1,26 +1,13 @@
-name: Zpracování SAP Excelů
+name: Zpracování SAP.xlsx
 
 on:
   workflow_dispatch:
-    inputs:
-      mode:
-        description: 'Režim zpracování'
-        required: true
-        default: 'all'
-        type: choice
-        options:
-        - all
-        - single
-      file_path:
-        description: 'Cesta k souboru (pokud mode=single)'
-        required: false
-        default: ''
 
 jobs:
   process-excel:
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # Abychom mohli číst a případně zapisovat (pokud bychom chtěli commitovat)
+      contents: write
 
     steps:
       - name: Checkout repozitáře
@@ -37,11 +24,11 @@ jobs:
 
       - name: Spuštění skriptu
         run: |
-          python sap_processor.py --mode ${{ inputs.mode }} --file_path "${{ inputs.file_path }}"
+          python sap_processor.py
 
       - name: Nahrání výsledků (Artifacts)
         uses: actions/upload-artifact@v4
         with:
           name: SAP-outputs
-          path: sklady_porovnani/output/
+          path: sklady_porovnani/output/SAP.xlsx
           if-no-files-found: warn
