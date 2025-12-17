@@ -1,10 +1,10 @@
-name: Zpracování Skladů (Komplet)
+name: Zpracování Skladových Dat (Komplet + Report)
 
 on:
   workflow_dispatch:
 
 jobs:
-  process-warehouses:
+  process-and-commit:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -22,25 +22,50 @@ jobs:
         run: |
           pip install -r requirements.txt
 
-      # 1. Zpracování SAP
-      - name: Zpracování SAP
+      # --- SEKCE ZPRACOVÁNÍ ---
+      
+      # 1. Čištění SAP
+      - name: 1. Zpracování SAP
         run: python sap_processor.py
 
-      # 2. Zpracování RABEN
-      - name: Zpracování RABEN
+      # 2. Čištění RABEN
+      - name: 2. Zpracování RABEN
         run: python raben_processor.py
 
-      # 3. Sloučení a Business Logika
-      - name: Sloučení do Master souboru
+      # 3. Sloučení do jednoho vstupu
+      - name: 3. Slučování dat (Merge)
         run: python merge_processor.py
 
-      # 4. Nahrání výsledků
+      # 4. Finální porovnání a report
+      - name: 4. Generování reportu (Compare)
+        run: python compare_processor.py
+
+      # --- ULOŽENÍ VÝSLEDKŮ ---
+
+      - name: Commit & Push změn
+        run: |
+          git config --global user.name 'GitHub Actions Bot'
+          git config --global user.email 'actions@github.com'
+          
+          # Přidáme všechny vygenerované soubory (v input i output)
+          git add sklady_porovnani/output/*.xlsx
+          git add sklady_porovnani/input/POROVNANI_SKLADU.xlsx
+          
+          # Pokud jsou změny, commitneme je
+          if [[ -n $(git status -s) ]]; then
+            echo "Změny detekovány. Provádím commit..."
+            git commit -m "Auto-report: Kompletní výsledky porovnání skladů"
+            git push
+          else
+            echo "Žádné změny v datech."
+          fi
+
       - name: Nahrání výsledků (Artifacts)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Skladove-Vystupy
+          name: Vysledny-Report
           path: |
-            sklady_porovnani/output/SAP.xlsx
-            sklady_porovnani/output/RABEN.xlsx
+            sklady_porovnani/output/vysledky.xlsx
             sklady_porovnani/input/POROVNANI_SKLADU.xlsx
           if-no-files-found: warn
