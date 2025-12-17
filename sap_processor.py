@@ -67,7 +67,7 @@ def process_file(input_path, output_path):
         df = df[ordered_cols + remaining_cols]
         
         # 6. Přejmenování
-        rename_map = {"Material description": "Název", "Total Quantity": "Mnozstvi_SAP"}
+        rename_map = {"Material description": "Nazev", "Total Quantity": "Mnozstvi_SAP"}
         df = df.rename(columns=rename_map)
         
         # 7. Sort
