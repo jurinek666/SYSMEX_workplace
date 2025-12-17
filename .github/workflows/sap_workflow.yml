@@ -1,10 +1,10 @@
-name: Zpracování SAP.xlsx
+name: Zpracování Skladových Dat (SAP + RABEN)
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: # Spouštění tlačítkem
 
 jobs:
-  process-excel:
+  process-all:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -22,13 +22,21 @@ jobs:
         run: |
           pip install -r requirements.txt
 
-      - name: Spuštění skriptu
+      # 1. Krok: SAP
+      - name: Spuštění SAP processoru
         run: |
           python sap_processor.py
 
+      # 2. Krok: RABEN
+      - name: Spuštění RABEN processoru
+        run: |
+          python raben_processor.py
+
+      # 3. Krok: Uložení všeho z output složky
       - name: Nahrání výsledků (Artifacts)
+        if: always() # Nahraje výsledky i kdyby jeden ze skriptů spadl (částečný úspěch)
         uses: actions/upload-artifact@v4
         with:
-          name: SAP-outputs
-          path: sklady_porovnani/output/SAP.xlsx
+          name: Zpracovana-data
+          path: sklady_porovnani/output/
           if-no-files-found: warn
