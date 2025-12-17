@@ -1,26 +1,15 @@
-name: Zpracování SAP Excelů
+name: Zpracování Skladových Dat (SAP + RABEN)
 
 on:
-  workflow_dispatch:
-    inputs:
-      mode:
-        description: 'Režim zpracování'
-        required: true
-        default: 'all'
-        type: choice
-        options:
-        - all
-        - single
-      file_path:
-        description: 'Cesta k souboru (pokud mode=single)'
-        required: false
-        default: ''
+  workflow_dispatch: # Spouštění tlačítkem
 
 jobs:
-  process-excel:
+  process-and-commit:
     runs-on: ubuntu-latest
+    
+    # DŮLEŽITÉ: Povolení zápisu do repozitáře, aby mohl proběhnout commit
     permissions:
-      contents: write  # Abychom mohli číst a případně zapisovat (pokud bychom chtěli commitovat)
+      contents: write
 
     steps:
       - name: Checkout repozitáře
@@ -35,13 +24,41 @@ jobs:
         run: |
           pip install -r requirements.txt
 
-      - name: Spuštění skriptu
+      # 1. Zpracování SAP
+      - name: Spuštění SAP processoru
         run: |
-          python sap_processor.py --mode ${{ inputs.mode }} --file_path "${{ inputs.file_path }}"
+          python sap_processor.py
 
+      # 2. Zpracování RABEN
+      - name: Spuštění RABEN processoru
+        run: |
+          python raben_processor.py
+
+      # 3. Commit a Push výsledků zpět do repozitáře
+      - name: Uložení změn (Commit & Push)
+        run: |
+          # Konfigurace uživatele pro Git (bude to vypadat jako GitHub Actions Bot)
+          git config --global user.name 'GitHub Actions Bot'
+          git config --global user.email 'actions@github.com'
+          
+          # Přidání všech souborů ze složky output
+          git add sklady_porovnani/output/*.xlsx
+          
+          # Kontrola, zda jsou nějaké změny k uložení
+          # Pokud se nic nezměnilo, commit by vyhodil chybu, proto ta podmínka
+          if [[ -n $(git status -s) ]]; then
+            echo "Změny detekovány. Provádím commit..."
+            git commit -m "Auto-update: Zpracovaná data SAP a RABEN"
+            git push
+          else
+            echo "Žádné změny v datech. Commit není potřeba."
+          fi
+
+      # (Volitelné) Stále nahráváme i Artifact pro snadné stažení
       - name: Nahrání výsledků (Artifacts)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: SAP-outputs
+          name: Zpracovana-data
           path: sklady_porovnani/output/
           if-no-files-found: warn
