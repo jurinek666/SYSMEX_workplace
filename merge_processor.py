@@ -1,80 +1,103 @@
 import pandas as pd
-import os
+import openpyxl
+from openpyxl.worksheet.table import Table, TableStyleInfo
 import sys
-from utils import create_excel_table
+import os
+import hashlib
 
-# --- KONFIGURACE ---
-INPUT_SAP = "sklady_porovnani/output/SAP.xlsx"
-INPUT_RABEN = "sklady_porovnani/output/RABEN.xlsx"
-OUTPUT_MERGED = "sklady_porovnani/input/POROVNANI_SKLADU.xlsx"
+def calculate_hash(row):
+    """
+    Vytvoří SHA-256 hash z Material a Batch.
+    Pravidla: UPPER(TRIM(Material)) + '|' + UPPER(TRIM(Batch))
+    """
+    # Získání hodnot, ošetření NaN -> prázdný string
+    mat = str(row['Material']).strip().upper() if pd.notna(row['Material']) else ""
+    batch = str(row['Batch']).strip().upper() if pd.notna(row['Batch']) else ""
+    
+    # Sestavení řetězce
+    raw_string = f"{mat}|{batch}"
+    
+    # Hashování
+    return hashlib.sha256(raw_string.encode('utf-8')).hexdigest()
 
-def merge_files():
-    print(f"--- Spouštím slučování do: {OUTPUT_MERGED} ---")
+def create_excel_table(ws, sheet_name, table_name):
+    """Pomocná funkce pro vytvoření Excel tabulky"""
+    max_row = ws.max_row
+    max_col = ws.max_column
+    # Převod čísla sloupce na písmeno (např. 5 -> E)
+    from openpyxl.utils import get_column_letter
+    col_letter = get_column_letter(max_col)
+    
+    ref = f"A1:{col_letter}{max_row}"
+    
+    tab = Table(displayName=table_name, ref=ref)
+    style = TableStyleInfo(name="TableStyleMedium9", showFirstColumn=False,
+                           showLastColumn=False, showRowStripes=True, showColumnStripes=False)
+    tab.tableStyleInfo = style
+    ws.add_table(tab)
 
-    if not os.path.exists(INPUT_SAP):
-        print(f"❌ CHYBA: Chybí vstup: {INPUT_SAP}")
-        sys.exit(1)
-    if not os.path.exists(INPUT_RABEN):
-        print(f"❌ CHYBA: Chybí vstup: {INPUT_RABEN}")
+def process_merge():
+    print("--- Začínám slučování a finální úpravy ---")
+    
+    # Cesty
+    sap_path = "sklady_porovnani/output/SAP.xlsx"
+    raben_path = "sklady_porovnani/output/RABEN.xlsx"
+    output_path = "sklady_porovnani/input/POROVNANI_SKLADU.xlsx"
+    
+    # Kontrola vstupů
+    if not os.path.exists(sap_path) or not os.path.exists(raben_path):
+        print("❌ Chybí vstupní soubory v output složce (SAP.xlsx nebo RABEN.xlsx).")
         sys.exit(1)
 
     try:
-        print("Načítám SAP a RABEN...")
-        df_sap = pd.read_excel(INPUT_SAP, sheet_name="SAP")
-        df_raben = pd.read_excel(INPUT_RABEN, sheet_name="RABEN")
-
-        # ==========================================
-        # --- RABEN BUSINESS LOGIC (TRANSFORMACE) ---
-        # ==========================================
-        print("Aplikuji obchodní pravidla na data RABEN...")
+        # 1. Načtení dat
+        df_sap = pd.read_excel(sap_path, sheet_name="SAP")
+        df_raben = pd.read_excel(raben_path, sheet_name="RABEN")
         
-        # 1. Filtrace obalů (P-kódy)
-        # Regex: ^ = začátek, P = písmeno P, \d{3,4} = 3 nebo 4 číslice, $ = konec
-        p_code_mask = df_raben['Material'].astype(str).str.match(r'^P\d{3,4}$')
-        count_deleted = p_code_mask.sum()
-        
-        if count_deleted > 0:
-            # Ponecháme jen ty, co NEODPOVÍDAJÍ masce (vlnovka ~ znamená negaci)
-            df_raben = df_raben[~p_code_mask].copy()
-            print(f"   -> Odstraněno {count_deleted} řádků obalového materiálu (P-kódy).")
-        
-        # 2. Přepočet měrné jednotky pro ZE001906
-        # Najdeme řádky
-        convert_mask = df_raben['Material'] == 'ZE001906'
-        count_converted = convert_mask.sum()
-        
-        if count_converted > 0:
-            # Ujistíme se, že pracujeme s čísly (pro jistotu)
-            df_raben['Mnozstvi_RABEN'] = pd.to_numeric(df_raben['Mnozstvi_RABEN'], errors='coerce').fillna(0)
-            
-            # Provedeme násobení 50 pouze u vybraných řádků
-            df_raben.loc[convert_mask, 'Mnozstvi_RABEN'] = df_raben.loc[convert_mask, 'Mnozstvi_RABEN'] * 50
-            print(f"   -> Přepočteno {count_converted} řádků materiálu ZE001906 (ks -> balení * 50).")
+        print(f"Načteno: SAP ({len(df_sap)} řádků), RABEN ({len(df_raben)} řádků)")
 
-        # ==========================================
-        # --- KONEC TRANSFORMACE ---
-        # ==========================================
+        # --- LOGIKA ÚPRAV PRO RABEN ---
+        
+        # A. Filtrace obalů (Maska P*** nebo P****)
+        # Regex: Začátek(^) P, následují 3 nebo 4 číslice(\d{3,4}), Konec($)
+        initial_count = len(df_raben)
+        mask_packaging = df_raben['Material'].astype(str).str.match(r'^P\d{3,4}$', case=False)
+        df_raben = df_raben[~mask_packaging].copy()
+        print(f"Filtr obalů (P...): Odstraněno {initial_count - len(df_raben)} řádků.")
 
-        os.makedirs(os.path.dirname(OUTPUT_MERGED), exist_ok=True)
+        # B. Přepočet množství pro ZE001906 (* 50)
+        mask_item = df_raben['Material'] == 'ZE001906'
+        count_items = mask_item.sum()
+        if count_items > 0:
+            df_raben.loc[mask_item, 'Mnozstvi_RABEN'] = df_raben.loc[mask_item, 'Mnozstvi_RABEN'] * 50
+            print(f"Přepočet: Upraveno množství u {count_items} řádků (ZE001906).")
 
-        print("Zapisuji data...")
-        with pd.ExcelWriter(OUTPUT_MERGED, engine='openpyxl') as writer:
+        # --- LOGIKA HASH (PRO OBĚ TABULKY) ---
+        print("Generuji HASH sloupce...")
+        df_sap['HASH'] = df_sap.apply(calculate_hash, axis=1)
+        df_raben['HASH'] = df_raben.apply(calculate_hash, axis=1)
+
+        # --- ZÁPIS DO POROVNANI_SKLADU.xlsx ---
+        
+        with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
             df_sap.to_excel(writer, sheet_name='SAP', index=False)
             df_raben.to_excel(writer, sheet_name='RABEN', index=False)
-
-        # Formátování tabulek (volání centralizované funkce z utils.py)
-        print("Formátuji tabulky...")
-        create_excel_table(OUTPUT_MERGED, "SAP", "tbl_SAP")
-        create_excel_table(OUTPUT_MERGED, "RABEN", "tbl_RABEN")
-
-        print(f"✅ Hotovo. Sloučený soubor uložen: {OUTPUT_MERGED}")
+            
+        # --- FORMÁTOVÁNÍ TABULEK ---
+        wb = openpyxl.load_workbook(output_path)
+        
+        # Formátování listu SAP
+        create_excel_table(wb["SAP"], "SAP", "tbl_SAP")
+        
+        # Formátování listu RABEN
+        create_excel_table(wb["RABEN"], "RABEN", "tbl_RABEN")
+        
+        wb.save(output_path)
+        print(f"✅ HOTOVO. Master soubor vytvořen: {output_path}")
 
     except Exception as e:
         print(f"❌ Chyba při slučování: {e}")
-        # Pro lepší debugování v GitHub Actions
-        import traceback
-        traceback.print_exc()
         sys.exit(1)
 
 if __name__ == "__main__":
-    merge_files()
+    process_merge()
