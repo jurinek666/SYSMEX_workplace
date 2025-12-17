@@ -1,0 +1,47 @@
+name: Zpracování SAP Excelů
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Režim zpracování'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+        - all
+        - single
+      file_path:
+        description: 'Cesta k souboru (pokud mode=single)'
+        required: false
+        default: ''
+
+jobs:
+  process-excel:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Abychom mohli číst a případně zapisovat (pokud bychom chtěli commitovat)
+
+    steps:
+      - name: Checkout repozitáře
+        uses: actions/checkout@v3
+
+      - name: Nastavení Pythonu
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Instalace závislostí
+        run: |
+          pip install -r requirements.txt
+
+      - name: Spuštění skriptu
+        run: |
+          python sap_processor.py --mode ${{ inputs.mode }} --file_path "${{ inputs.file_path }}"
+
+      - name: Nahrání výsledků (Artifacts)
+        uses: actions/upload-artifact@v4
+        with:
+          name: SAP-outputs
+          path: sklady_porovnani/output/
+          if-no-files-found: warn
