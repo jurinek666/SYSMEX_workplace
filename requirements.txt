@@ -1,2 +1,6 @@
+# Core dependencies (původní)
 pandas
 openpyxl
+
+# Azure Functions dependencies
+azure-functions
